@@ -6,8 +6,7 @@ import sys
 # -----------------------------
 # CONFIGURATION
 # -----------------------------
-# แค่เปลี่ยน DATASET_NAME เป็น folder ของ dataset ที่ต้องการใช้
-DATASET_NAME = "dataset_pipes"  # ตัวอย่าง: "dataset_kicker" หรือ "ETH3D_some_scene"
+DATASET_NAME = "dataset_pipes"  # เปลี่ยนชื่อ dataset ได้ตรงนี้
 
 ROOT = Path(__file__).resolve().parent
 
@@ -55,6 +54,7 @@ def run_colmap():
         print(f"[WARN] COLMAP failed or already exists: {e}")
         print("       Using existing COLMAP output")
 
+
 def run_eval_2d():
     print("\n▶ STEP 2: 2D Reprojection Evaluation")
 
@@ -78,6 +78,36 @@ def run_eval_2d():
     rms, used = evaluate_reprojection(pts_file, cam_file, IMG_DIR, GT_2D_DIR)
     print(f"[RESULT] RMS reprojection error: {rms:.2f}px (images={used})")
 
+
+def run_distance_analysis():
+    print("\n▶ STEP 2.5: Camera-to-Object Distance Analysis (COLMAP scale)")
+    # ระยะนี้อยู่ใน COLMAP internal scale (ไม่ใช่เมตรจริง)
+    # ใช้เพื่ออธิบายเชิงสัดส่วนว่ากล้องอยู่ใกล้/ไกลวัตถุแค่ไหน
+
+    from shared.colmap_io import load_colmap_sparse
+    import numpy as np
+
+    pts3d, poses = load_colmap_sparse(COLMAP_SPARSE)
+
+    if pts3d.shape[0] == 0 or len(poses) == 0:
+        print("[SKIP] No 3D points or camera poses found")
+        return
+
+    # ใช้ centroid ของ point cloud แทนตำแหน่งวัตถุ
+    object_center = pts3d.mean(axis=0)
+
+    # ดึงตำแหน่งกล้อง
+    cam_positions = np.array([v["t"] for v in poses.values()])
+
+    # คำนวณระยะกล้อง → วัตถุ (เชิงสัดส่วน)
+    distances = np.linalg.norm(cam_positions - object_center, axis=1)
+
+    print("Camera-to-object distance (relative scale):")
+    print(f"  min  : {distances.min():.2f}")
+    print(f"  mean : {distances.mean():.2f}")
+    print(f"  max  : {distances.max():.2f}")
+
+
 def run_eval_3d():
     print("\n▶ STEP 3: 3D Alignment Evaluation")
 
@@ -87,6 +117,7 @@ def run_eval_3d():
         out_dir=EVAL_3D_DIR
     )
 
+
 # -----------------------------
 # RUN PIPELINE
 # -----------------------------
@@ -95,6 +126,7 @@ if __name__ == "__main__":
 
     run_colmap()
     run_eval_2d()
+    run_distance_analysis()   # ← STEP ใหม่
     run_eval_3d()
 
     print("\n🎉 Pipeline finished successfully")
