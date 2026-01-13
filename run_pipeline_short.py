@@ -4,6 +4,8 @@ import numpy as np
 import os
 import shutil
 import csv
+from evaluation.eval_align_and_localize import evaluate_reprojection_error
+
 
 # =============================
 # CONFIG
@@ -23,8 +25,8 @@ CAMERA_WORLD_CSV = ROOT / f"data/{DATASET_NAME}/camera_world.csv"
 
 COLMAP_WS.mkdir(parents=True, exist_ok=True)
 
-COLMAP_EXE = r"C:\COLMAP_CPU\bin\colmap.exe"
-QT_PLUGIN = r"C:\COLMAP_CPU\plugins\platforms"
+COLMAP_EXE = r"C:\colmap\bin\colmap.exe"
+QT_PLUGIN = r"C:\colmap\plugins\platforms"
 
 from shared.colmap_io import load_colmap_sparse
 from refinement.refinement import refine_model
@@ -131,7 +133,20 @@ if __name__ == "__main__":
     run_colmap()
     pts, poses = refine_with_log()
     pts_w, poses_w = georef(pts, poses)
+    # =============================
+    # UNCERTAINTY ESTIMATION (NO GT)
+    # =============================
+    cam_centers = np.array([v["t"] for v in poses_w.values()])
 
+    scene_center = pts_w.mean(axis=0)
+
+    # distance from each camera to estimated scene center
+    dists = np.linalg.norm(cam_centers - scene_center, axis=1)
+
+    print("\n[Uncertainty without GT]")
+    print(f"Mean camera-scene dist : {dists.mean():.3f} m")
+    print(f"Std  camera-scene dist : {dists.std():.3f} m")
+    print(f"Min / Max              : {dists.min():.3f} / {dists.max():.3f} m")
     REAL_POS = np.array([100.5653152, 13.84682465, -5.409000397])
     # real_box (1) 100.5653152, 13.84682465, -5.409000397
     # real_umbrella (1) 100.5658646, 13.84652138, -6.760000229
