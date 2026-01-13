@@ -37,12 +37,9 @@ def subsample_images():
         shutil.rmtree(IMG_SUB)
     IMG_SUB.mkdir()
 
-    imgs = sorted(
-        p for p in IMG_DIR.iterdir()
-        if p.suffix.lower() in [".jpg", ".png", ".jpeg"]
-    )
-
-    for p in imgs[::SUBSAMPLE_STEP]:
+    imgs = sorted(p for p in IMG_DIR.iterdir() if p.suffix.lower() in [".jpg", ".png", ".jpeg"])
+    use = imgs[::SUBSAMPLE_STEP]
+    for p in use:
         shutil.copy(p, IMG_SUB / p.name)
 
 # =============================
@@ -51,11 +48,8 @@ def subsample_images():
 def run_colmap():
     db = COLMAP_WS / "database.db"
     sparse = COLMAP_WS / "sparse"
-
-    if db.exists():
-        db.unlink()
-    if sparse.exists():
-        shutil.rmtree(sparse)
+    if db.exists(): db.unlink()
+    if sparse.exists(): shutil.rmtree(sparse)
     sparse.mkdir(parents=True)
 
     env = os.environ.copy()
@@ -65,128 +59,74 @@ def run_colmap():
     def run(cmd):
         subprocess.run(cmd, check=True, env=env)
 
-    run([
-        COLMAP_EXE, "feature_extractor",
-        "--database_path", db,
-        "--image_path", IMG_SUB,
-        "--ImageReader.single_camera", "1"
-    ])
-
-    run([
-        COLMAP_EXE, "exhaustive_matcher",
-        "--database_path", db
-    ])
-
-    run([
-        COLMAP_EXE, "mapper",
-        "--database_path", db,
-        "--image_path", IMG_SUB,
-        "--output_path", sparse
-    ])
+    run([COLMAP_EXE, "feature_extractor", "--database_path", db, "--image_path", IMG_SUB, "--ImageReader.single_camera", "1"])
+    run([COLMAP_EXE, "exhaustive_matcher", "--database_path", db])
+    run([COLMAP_EXE, "mapper", "--database_path", db, "--image_path", IMG_SUB, "--output_path", sparse])
 
 # =============================
-# REFINEMENT
+# REFINEMENT WITH LOG
 # =============================
 def refine_with_log():
     pts, poses = load_colmap_sparse(SPARSE)
     n_before = len(pts)
-
     pts_r, poses_r = refine_model(points_3d=pts, poses=poses)
     n_after = len(pts_r)
-
     print()
     print("✅ COLMAP done")
     print(f"▶ Refinement: {n_before} → {n_after} pts")
-
     return pts_r, poses_r
 
 # =============================
-# LOAD WORLD POSITIONS (FIX H SIGN)
+# GEOREFERENCING
 # =============================
 def load_world_positions():
     with open(CAMERA_WORLD_CSV, newline="", encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
-
     world = []
     for i in range(0, len(rows), SUBSAMPLE_STEP):
         r = rows[i]
         world.append([
             float(r["E"]),
             float(r["N"]),
-            -float(r["H"])  # 🔥 FIX: world Z must be UP
+            -float(r["H"])  # 🔥 แค่ flip sign ของ H
         ])
-
     return np.array(world)
 
-# =============================
-# SIMILARITY TRANSFORM
-# =============================
 def similarity(X, Y):
     muX, muY = X.mean(0), Y.mean(0)
     Xc, Yc = X - muX, Y - muY
-
     U, D, Vt = np.linalg.svd(Xc.T @ Yc / len(X))
     R = Vt.T @ U.T
-
     if np.linalg.det(R) < 0:
         Vt[-1] *= -1
         R = Vt.T @ U.T
-
     s = np.trace(np.diag(D)) / np.sum(Xc ** 2)
     t = muY - s * R @ muX
-
     return s, R, t
 
-# =============================
-# GEOREFERENCING (FINAL)
-# =============================
 def georef(pts, poses):
-    world_all = load_world_positions()
-    pose_items = list(poses.items())
-    n = min(len(pose_items), len(world_all))
+    world = load_world_positions()
+    cam_positions = np.array([p["t"] for p in poses.values()])
 
-    if n < 3:
-        print("❌ Cannot georef: < 3 cameras")
-        return pts, poses
-
-    cam_positions = []
-    world = []
-
-    for i in range(n):
-        cam_positions.append(pose_items[i][1]["t"])
-        world.append(world_all[i])
-
-    cam_positions = np.array(cam_positions)
-    world = np.array(world)
-
-    # FIX AXIS: COLMAP Z down → Z up
+    # 🔥 flip Z ของ cam_positions ก่อน similarity transform
     cam_positions[:, 2] *= -1
 
-    s, R, t = similarity(cam_positions, world)
-
+    n = min(len(cam_positions), len(world))
+    X = cam_positions[:n]
+    Y = world[:n]
+    if n < 3:
+        return pts, poses
+    s, R, t = similarity(X, Y)
     pts_w = (s * (R @ pts.T)).T + t
-
-    poses_w = {}
-    for k, v in poses.items():
-        tc = v["t"].copy()
-        tc[2] *= -1
-        poses_w[k] = {
-            "t": (s * (R @ tc)) + t,
-            "R": R @ v["R"]
-        }
-
-    print(f"🌍 Georef using {n} cameras")
-
+    poses_w = {k: {"t": (s * (R @ v["t"] * np.array([1,1,-1]))) + t, "R": R @ v["R"]} for k, v in poses.items()}  # flip Z per pose
     return pts_w, poses_w
 
 # =============================
-# ERROR (CAMERA CENTROID)
+# ERROR
 # =============================
-def error_vs_real(poses_w, real_pos):
-    cams = np.array([p["t"] for p in poses_w.values()])
-    est = cams.mean(0)
+def error_vs_real(pts, real_pos):
+    est = pts.mean(0)
     err = np.linalg.norm(est - real_pos)
-
     print(" Real      :", real_pos)
     print("Estimated :", est)
     print(f"Error     : {err:.3f} m")
@@ -197,9 +137,10 @@ def error_vs_real(poses_w, real_pos):
 if __name__ == "__main__":
     subsample_images()
     run_colmap()
-
     pts, poses = refine_with_log()
     pts_w, poses_w = georef(pts, poses)
 
     REAL_POS = np.array([100.5653152, 13.84682465, -5.409000397])
-    error_vs_real(poses_w, REAL_POS)
+    # real_box (1) 100.5653152, 13.84682465, -5.409000397
+    # real_umbrella (1) 100.5658646, 13.84652138, -6.760000229
+    error_vs_real(pts_w, REAL_POS)
