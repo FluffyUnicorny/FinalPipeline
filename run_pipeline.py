@@ -4,6 +4,7 @@ import subprocess
 import sys
 import numpy as np
 import tempfile
+import os
 
 # -----------------------------
 # CONFIGURATION
@@ -38,7 +39,6 @@ from evaluation.eval_align_and_localize import evaluate_alignment
 # <<< NEW >>>
 from refinement.refinement import refine_model
 
-
 # -----------------------------
 # PIPELINE STEPS
 # -----------------------------
@@ -49,20 +49,29 @@ def run_colmap():
         "colmap", "automatic_reconstructor",
         "--image_path", str(IMG_DIR),
         "--workspace_path", str(COLMAP_WS),
-        "--dense", "0"
+        "--dense", "0",
+        "--use_gpu", "0"   # <<< สำคัญ: nocuda build
     ]
 
+    # FIX for Windows Qt
+    env = os.environ.copy()
+    env["QT_QPA_PLATFORM_PLUGIN_PATH"] = r"C:\Program Files\COLMAP\bin\platforms"
+    env["QT_QPA_PLATFORM"] = "windows"   # <<< เปลี่ยนจาก offscreen เป็น windows
+
     try:
-        subprocess.run(" ".join(cmd), shell=True, check=True)
+        subprocess.run(
+            cmd,
+            env=env,
+            check=True
+        )
         print("✅ COLMAP SfM finished")
     except Exception as e:
         print(f"[WARN] COLMAP failed or already exists: {e}")
         print("       Using existing COLMAP output")
 
-
 # <<< NEW >>>
 def run_refinement():
-    print("\n▶ STEP 2: Refinement (ICP / filtering)")
+    print("\n▶ STEP 2: Refinement (outlier filtering)")
 
     pts3d, poses = load_colmap_sparse(COLMAP_SPARSE)
 
@@ -70,16 +79,14 @@ def run_refinement():
         print("[SKIP] No data for refinement")
         return pts3d, poses
 
+    # refine_model เวอร์ชันปัจจุบันทำแค่ statistical filtering
     refined_pts, refined_poses = refine_model(
-        points_3d=pts3d,
-        poses=poses,
-        use_icp=True,
-        use_ba=False
+        pts3d,
+        poses
     )
 
     print(f"✅ Refinement done: {pts3d.shape[0]} → {refined_pts.shape[0]} points")
     return refined_pts, refined_poses
-
 
 def run_eval_2d(pts3d, poses):
     print("\n▶ STEP 3: 2D Reprojection Evaluation")
@@ -147,3 +154,4 @@ if __name__ == "__main__":
     run_eval_3d()
 
     print("\n🎉 Pipeline finished successfully")
+    

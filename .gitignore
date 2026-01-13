@@ -1,32 +1,51 @@
-# -----------------------------
+# ===============================
 # Python
-# -----------------------------
+# ===============================
 __pycache__/
 *.py[cod]
-*.so
+*.pyo
+*.pyd
+*.egg-info/
+.env
+.venv
+venv/
 
-# -----------------------------
-# COLMAP outputs
-# -----------------------------
-data/*/colmap/
-sfm/
-
-# -----------------------------
-# Evaluation outputs / temp
-# -----------------------------
-evaluation/evaluation_2d/tmp/
-evaluation/evaluation_3d/*
-
-# -----------------------------
-# Large data files
-# -----------------------------
-*.ply
-*.npy
-*.bin
-
-# -----------------------------
-# OS / IDE
-# -----------------------------
-.vscode/
+# ===============================
+# OS / Editor
+# ===============================
 .DS_Store
 Thumbs.db
+.vscode/
+.idea/
+
+# ===============================
+# Logs / temp
+# ===============================
+*.log
+*.tmp
+*.swp
+
+# ===============================
+# COLMAP generated files
+# ===============================
+**/database.db
+**/colmap/
+**/sparse/
+**/dense/
+
+# ===============================
+# Evaluation outputs (auto-generated)
+# ===============================
+evaluation/evaluation_2d/
+evaluation/evaluation_3d/
+**/aligned_estimated_points.ply
+**/distances.npy
+**/summary.txt
+
+# ===============================
+# Datasets (DO NOT UPLOAD)
+# ===============================
+# Datasets (do not upload)
+data/dataset_pipes/
+data/dataset_kicker/
+data/dataset_relief/
