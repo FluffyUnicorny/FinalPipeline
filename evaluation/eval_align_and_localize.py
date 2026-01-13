@@ -111,3 +111,42 @@ def evaluate_alignment(
     print(f"     RMSE   : {rmse_m:.4f} m ({rmse_cm:.2f} cm)")
 
     return distances, mean_m, median_m, rmse_m
+
+def evaluate_reprojection_error(
+    points_3d,
+    points_2d,
+    K,
+    R,
+    t
+):
+    """
+    Evaluate reprojection error (pixel error).
+    ใช้ได้แม้ไม่มี ground truth position
+    """
+
+    import numpy as np
+
+    errors = []
+
+    for Pw, p_obs in zip(points_3d, points_2d):
+        Pc = R @ Pw + t
+        if Pc[2] <= 0:
+            continue
+
+        p_proj = K @ (Pc / Pc[2])
+        p_proj = p_proj[:2]
+
+        err = np.linalg.norm(p_proj - p_obs)
+        errors.append(err)
+
+    if len(errors) == 0:
+        return None
+
+    errors = np.array(errors)
+
+    return {
+        "mean_px": float(errors.mean()),
+        "median_px": float(np.median(errors)),
+        "rmse_px": float(np.sqrt(np.mean(errors**2))),
+        "num_points": int(len(errors))
+    }
