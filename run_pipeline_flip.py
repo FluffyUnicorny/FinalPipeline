@@ -144,3 +144,6 @@ if __name__ == "__main__":
     # real_box (1) 100.5653152, 13.84682465, -5.409000397
     # real_umbrella (1) 100.5658646, 13.84652138, -6.760000229
     error_vs_real(pts_w, REAL_POS)
+
+from reprojection.reprojection import compute_reprojection_stats
+compute_reprojection_stats(SPARSE)
