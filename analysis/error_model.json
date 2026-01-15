@@ -1,0 +1,11 @@
+{
+  "model_type": "fixed_range_characterization",
+  "range_m": 2.392,
+  "world_error_m": 2.625,
+  "reprojection": {
+    "mean_px": 0.632,
+    "std_px": 0.529,
+    "p95_px": 1.672
+  },
+  "note": "Single-range characterization due to data limitation"
+}
